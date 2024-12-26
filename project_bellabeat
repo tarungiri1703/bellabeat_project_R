@@ -1,0 +1,207 @@
+install.packages("readr")
+install.packages("dplyr")
+install.packages("tidyverse")
+install.packages("tidyr")
+install.packages("magrittr")
+install.packages("janitor")
+    
+library("readr")
+library("dplyr")
+library("tidyverse")
+library("tidyr")
+library("magrittr") 
+library("janitor")
+
+getwd()
+
+activity <- read_csv("dailyActivity_merged.csv")
+heart_rate <- read_csv("heartrate_seconds_merged.csv")
+mets <- read_csv("minuteMETsNarrow_merged.csv")
+sleep <- read_csv("sleepDay_merged.csv")
+weight <- read_csv("weightLogInfo_merged.csv")
+
+install.packages("here")
+library("here")
+
+install.packages("skimr")
+library("skimr")
+
+head(activity)
+head(heart_rate)
+head(sleep)
+head(weight)
+
+# While inspected the data, I noticed the two columns, “TotalDistance” and “TrackerDistance” have the exact same values.
+# First step I took in cleaning the data is removing the “TotalDistance” column in the activity data frame.
+
+activity <- activity %>%
+  select(-TotalDistance)
+
+head(activity)
+
+# Then I removed the “Fat” column from the weight data frame. 
+# The column seemed to not have any significance to the entire dataset.
+
+weight <- weight %>%
+  select(-Fat)
+
+head(weight)
+
+# My next step in cleaning the data was to split date-time columns into two columns.
+
+sleep <- sleep %>%
+  rename(Date = SleepDay) %>%
+  separate(Date,c("Date","Time"),sep=" ") %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+
+heart_rate <- heart_rate %>%
+  rename(Date = Time) %>%
+  separate(Date,c("Date","Time"),sep=" ") %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+         
+mets <- mets %>%
+  rename(Date = ActivityMinute) %>%
+  separate(Date,c("Date","Time"),sep=" ") %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+
+weight <- weight %>%
+  rename(Date = Date) %>%
+  separate(Date,c("Date","Time"),sep=" ") %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+         
+glimpse(sleep)
+
+glimpse(heart_rate)
+
+glimpse(mets)
+
+glimpse(weight)
+
+#Then, I cleaned the names of the columns of each data frame:
+
+activity<-clean_names(activity)
+sleep<-clean_names(sleep)
+heart_rate<-clean_names(heart_rate)
+mets<-clean_names(mets)
+weight<-clean_names(weight)
+
+# I combinde all these data frames into one big data frame, 
+# joining them together by the user IDs and date.
+# Before I merged the data, I will use rename function to change the activity_date column in the activity data frame to “date” to be consistent throughout.
+
+activity <- activity %>% 
+    rename(date=activity_date)
+
+newdata <- merge(activity, sleep, by = c('id', 'date'), all = TRUE)                          
+new2 <- merge(newdata, weight, by = c('id', 'date'), all = TRUE)
+fitbit_data <- merge(new2, mets, by = c('id', 'date'), all = TRUE)
+
+#I noticed that the column mets was “me_ts”, so I had to use the rename function again.
+
+fitbit_data <- fitbit_data %>% 
+  rename(mets=me_ts)
+
+str(fitbit_data)
+
+#analysis
+
+aid <- unique(activity$id)
+wid <- unique(weight$id)
+mid <- unique(mets$id)
+sid <- unique(sleep$id)
+hid <- unique(heart_rate$id)
+
+length(aid)
+length(wid)
+length(mid)
+length(sid)
+length(hid)
+
+# We see that there are different values for each data frame, when we were told that there were 30 participants during this study. This tells us the data is not totally synced up – there are matching IDs across the data frames, but there are far more IDs that aren’t matched. Because of this, my analysis will be per health topic.  
+# The average (and also the healthy) range for heart beats per minute is 60-100 BPM (Laskowski, 2020),
+# so lets see the average heart rate and the amount of values that fall into that range. 
+
+mean(heart_rate$value)
+
+sum(heart_rate$value>=60 & heart_rate$value<=100)
+
+sum(heart_rate$value>=60 & heart_rate$value<=100)/sum(heart_rate$value) *100
+
+heart_rate %>% 
+  select(value) %>% 
+  summary()
+
+# So the average heart rate falls into the range which means out of the several values per user, we can say the average BPM is healthy.
+# we can rely on the healthy average heart rate value of 77 BPM (rounded), so we can say that Fitbit users have a healthy average BPM.
+
+fitbit_data %>% 
+ select(total_steps,tracker_distance,logged_activities_distance,
+        very_active_distance,moderately_active_distance,light_active_distance,
+        sedentary_active_distance,very_active_minutes,fairly_active_minutes,
+        lightly_active_minutes,sedentary_active_distance,very_active_minutes,
+        fairly_active_minutes,lightly_active_minutes,sedentary_minutes,
+        calories,total_sleep_records,total_minutes_asleep,total_time_in_bed,
+        weight_kg,weight_pounds,bmi, mets) %>%      
+ summary()
+
+# while the average distance travelled is slightly above the recommended amount of miles for healthy adults.
+# according to the mean amount of sleep measured in minutes, participants on average had 416 minutes (rounded) of sleep on average, which is a decent amount of sleep. 
+# steps and distance travelled vs calories burnt
+ 
+ggplot(data=fitbit_data, aes(x=total_steps, y=calories)) + geom_smooth() + labs(title="Total Steps vs Calories Burnt")
+
+ggplot(data=fitbit_data, aes(x=tracker_distance, y=calories)) + geom_smooth() + labs(title="Tracker Distance vs Calories Burnt")
+
+#Activity Intensity vs Calories 
+colors <- c("sedentary_minutes" = "blue", "lightly_active_minutes" = "red", "fairly_active_minutes" = "orange", "very_active_minutes"="black")
+plot <- ggplot(fitbit_data, aes( y=calories))+
+   geom_point(aes(x=sedentary_minutes, color="sedentary_minutes"))+
+   geom_point(aes(x=lightly_active_minutes, color="lightly_active_minutes"))+
+   geom_point(aes(x=fairly_active_minutes, color="fairly_active_minutes"))+
+   geom_point(aes(x=very_active_minutes, color="very_active_minutes"))+
+   labs(title="Activity Intensities vs Calories", y="Calories", x = "Minutes")
+ plot
+
+#Let’s look at how much sleep all participants across each tracked day have wasted all together.
+wasted_sleep <- sum(fitbit_data$total_time_in_bed,na.rm=T)-sum(fitbit_data$total_minutes_asleep,na.rm=T)
+wasted_sleep
+
+df <- fitbit_data[, c(17,18,27)]
+head(df)
+
+mean(df$sleep_wasted, na.rm=T)
+
+#See below a bar chart that depicts the comparison between time slept versus time in bed. 
+sum(fitbit_data$total_time_in_bed,na.rm=T)
+sum(fitbit_data$total_minutes_asleep,na.rm=T)
+sum(fitbit_data$sleep_wasted,na.rm=T)
+
+sleep_variables <- c('Sum_in_bed','Sum_asleep','total_difference')
+minutes <- c(222603540, 202211354, 20392186)
+
+df2 <- data.frame(sleep_variables, minutes)
+View(df2)
+
+w <- ggplot(data = df2, aes(x=sleep_variables, y=minutes))+
+  geom_bar(stat='identity')+
+  labs(title="Amount of Sleep Lost")
+w
+
+#As stated during the analysis of the summary statistics, the only variable that is actually helpful to us are the BMI values.
+bmi <- (fitbit_data$bmi)
+hist(bmi, 
+     main="Daily BMI of Participants",
+     xlab="BMI",
+     col="red",
+     freq=FALSE)
+
+max(bmi,na.rm=T)
+
+
+
+
+
+
+
+
+
